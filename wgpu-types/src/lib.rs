@@ -2582,8 +2582,8 @@ impl TextureFormat {
             | Self::Depth24PlusStencil8
             | Self::Depth32Float
             | Self::Depth32FloatStencil8
-            | Self::NV12 => (1, 1)
-            | Self::P010 => (1, 1),
+            | Self::NV12 => (1, 1),
+            Self::P010 => (1, 1),
 
             Self::Bc1RgbaUnorm
             | Self::Bc1RgbaUnormSrgb
@@ -3097,7 +3097,6 @@ impl TextureFormat {
                 Some(TextureAspect::Plane1) => Some(2),
                 _ => None,
             },
-
 
             Self::P010 => match aspect {
                 Some(TextureAspect::Plane0) => Some(1),
