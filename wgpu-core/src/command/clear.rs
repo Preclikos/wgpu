@@ -353,6 +353,11 @@ fn clear_texture_via_buffer_copies(
         return;
     }
 
+    if texture_desc.format == wgt::TextureFormat::P010 {
+        // TODO: Currently COPY_DST for P010 textures is unsupported.
+        return;
+    }
+
     // Gather list of zero_buffer copies and issue a single command then to perform them
     let mut zero_buffer_copy_regions = Vec::new();
     let buffer_copy_pitch = alignments.buffer_copy_pitch.get() as u32;

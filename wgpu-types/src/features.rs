@@ -969,6 +969,16 @@ bitflags_array! {
         ///
         /// [`TextureFormat::NV12`]: super::TextureFormat::NV12
         const TEXTURE_FORMAT_NV12 = 1 << 28;
+        /// Allows for creation of textures of format [`TextureFormat::P010`]
+        ///
+        /// Supported platforms:
+        /// - DX12
+        /// - Vulkan
+        ///
+        /// This is a native only feature.
+        ///
+        /// [`TextureFormat::P010`]: super::TextureFormat::P010
+        const TEXTURE_FORMAT_P010 = 1 << 49;
         /// ***THIS IS EXPERIMENTAL:*** Features enabled by this may have
         /// major bugs in them and are expected to be subject to breaking changes, suggestions
         /// for the API exposed by this should be posted on [the ray-tracing issue](https://github.com/gfx-rs/wgpu/issues/1040)

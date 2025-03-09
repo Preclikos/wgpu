@@ -270,6 +270,7 @@ impl crate::Adapter for super::Adapter {
                 flags
             }
             Tf::NV12 => return Tfc::empty(),
+            Tf::P010 => return Tfc::empty(),
             Tf::Rgb9e5Ufloat => {
                 if pc.msaa_apple3 {
                     all_caps
@@ -1145,6 +1146,7 @@ impl super::PrivateCapabilities {
                 }
             }
             Tf::NV12 => unreachable!(),
+            Tf::P010 => unreachable!(),
             Tf::Rgb9e5Ufloat => RGB9E5Float,
             Tf::Bc1RgbaUnorm => BC1_RGBA,
             Tf::Bc1RgbaUnormSrgb => BC1_RGBA_sRGB,

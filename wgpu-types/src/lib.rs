@@ -1945,6 +1945,21 @@ pub enum TextureFormat {
     /// [`Features::TEXTURE_FORMAT_NV12`] must be enabled to use this texture format.
     NV12,
 
+    /// YUV 4:2:0 chroma subsampled format.
+    ///
+    /// Contains two planes:
+    /// - 0: Single 8 bit channel luminance.
+    /// - 1: Dual 8 bit channel chrominance at half width and half height.
+    ///
+    /// Valid view formats for luminance are [`TextureFormat::R8Unorm`].
+    ///
+    /// Valid view formats for chrominance are [`TextureFormat::Rg8Unorm`].
+    ///
+    /// Width and height must be even.
+    ///
+    /// [`Features::TEXTURE_FORMAT_P010`] must be enabled to use this texture format.
+    P010,
+
     // Compressed textures usable with `TEXTURE_COMPRESSION_BC` feature. `TEXTURE_COMPRESSION_SLICED_3D` is required to use with 3D textures.
     /// 4x4 block compressed texture. 8 bytes per block (4 bit/px). 4 color + alpha pallet. 5 bit R + 6 bit G + 5 bit B + 1 bit alpha.
     /// [0, 63] ([0, 1] for alpha) converted to/from float [0, 1] in shader.
@@ -2190,6 +2205,7 @@ impl<'de> Deserialize<'de> for TextureFormat {
                     "depth24plus" => TextureFormat::Depth24Plus,
                     "depth24plus-stencil8" => TextureFormat::Depth24PlusStencil8,
                     "nv12" => TextureFormat::NV12,
+                    "p010" => TextureFormat::P010,
                     "rgb9e5ufloat" => TextureFormat::Rgb9e5Ufloat,
                     "bc1-rgba-unorm" => TextureFormat::Bc1RgbaUnorm,
                     "bc1-rgba-unorm-srgb" => TextureFormat::Bc1RgbaUnormSrgb,
@@ -2319,6 +2335,7 @@ impl Serialize for TextureFormat {
             TextureFormat::Depth24Plus => "depth24plus",
             TextureFormat::Depth24PlusStencil8 => "depth24plus-stencil8",
             TextureFormat::NV12 => "nv12",
+            TextureFormat::P010 => "p010",
             TextureFormat::Rgb9e5Ufloat => "rgb9e5ufloat",
             TextureFormat::Bc1RgbaUnorm => "bc1-rgba-unorm",
             TextureFormat::Bc1RgbaUnormSrgb => "bc1-rgba-unorm-srgb",
@@ -2409,6 +2426,8 @@ impl TextureFormat {
             (Self::Depth32FloatStencil8, TextureAspect::DepthOnly) => Some(Self::Depth32Float),
             (Self::NV12, TextureAspect::Plane0) => Some(Self::R8Unorm),
             (Self::NV12, TextureAspect::Plane1) => Some(Self::Rg8Unorm),
+            (Self::P010, TextureAspect::Plane0) => Some(Self::R16Unorm),
+            (Self::P010, TextureAspect::Plane1) => Some(Self::Rg16Unorm),
             // views to multi-planar formats must specify the plane
             (format, TextureAspect::All) if !format.is_multi_planar_format() => Some(format),
             _ => None,
@@ -2464,6 +2483,7 @@ impl TextureFormat {
     pub fn planes(&self) -> Option<u32> {
         match *self {
             Self::NV12 => Some(2),
+            Self::P010 => Some(2),
             _ => None,
         }
     }
@@ -2501,6 +2521,7 @@ impl TextureFormat {
     pub fn size_multiple_requirement(&self) -> (u32, u32) {
         match *self {
             Self::NV12 => (2, 2),
+            Self::P010 => (2, 2),
             _ => self.block_dimensions(),
         }
     }
@@ -2561,7 +2582,8 @@ impl TextureFormat {
             | Self::Depth24PlusStencil8
             | Self::Depth32Float
             | Self::Depth32FloatStencil8
-            | Self::NV12 => (1, 1),
+            | Self::NV12 => (1, 1)
+            | Self::P010 => (1, 1),
 
             Self::Bc1RgbaUnorm
             | Self::Bc1RgbaUnormSrgb
@@ -2672,7 +2694,7 @@ impl TextureFormat {
             Self::Depth32FloatStencil8 => Features::DEPTH32FLOAT_STENCIL8,
 
             Self::NV12 => Features::TEXTURE_FORMAT_NV12,
-
+            Self::P010 => Features::TEXTURE_FORMAT_P010,
             Self::R16Unorm
             | Self::R16Snorm
             | Self::Rg16Unorm
@@ -2806,6 +2828,7 @@ impl TextureFormat {
 
             // We only support sampling nv12 textures until we implement transfer plane data.
             Self::NV12 =>                 (        none,    binding),
+            Self::P010 =>                 (        none,    binding),
 
             Self::R16Unorm =>             (        msaa | s_ro_wo,    storage),
             Self::R16Snorm =>             (        msaa | s_ro_wo,    storage),
@@ -2942,6 +2965,13 @@ impl TextureFormat {
                 _ => None,
             },
 
+            Self::P010 => match aspect {
+                Some(TextureAspect::Plane0) | Some(TextureAspect::Plane1) => {
+                    Some(unfilterable_float)
+                }
+                _ => None,
+            },
+
             Self::R16Unorm
             | Self::R16Snorm
             | Self::Rg16Unorm
@@ -3068,6 +3098,13 @@ impl TextureFormat {
                 _ => None,
             },
 
+
+            Self::P010 => match aspect {
+                Some(TextureAspect::Plane0) => Some(1),
+                Some(TextureAspect::Plane1) => Some(2),
+                _ => None,
+            },
+
             Self::Bc1RgbaUnorm | Self::Bc1RgbaUnormSrgb | Self::Bc4RUnorm | Self::Bc4RSnorm => {
                 Some(8)
             }
@@ -3153,6 +3190,7 @@ impl TextureFormat {
             | Self::Depth32Float
             | Self::Depth32FloatStencil8
             | Self::NV12
+            | Self::P010
             | Self::Rgb9e5Ufloat
             | Self::Bc1RgbaUnorm
             | Self::Bc1RgbaUnormSrgb
@@ -3236,6 +3274,7 @@ impl TextureFormat {
             | Self::Depth32Float
             | Self::Depth32FloatStencil8
             | Self::NV12
+            | Self::P010
             | Self::Rgb9e5Ufloat
             | Self::Bc1RgbaUnorm
             | Self::Bc1RgbaUnormSrgb
@@ -3331,6 +3370,12 @@ impl TextureFormat {
             },
 
             Self::NV12 => match aspect {
+                TextureAspect::Plane0 => 1,
+                TextureAspect::Plane1 => 2,
+                _ => 3,
+            },
+
+            Self::P010 => match aspect {
                 TextureAspect::Plane0 => 1,
                 TextureAspect::Plane1 => 2,
                 _ => 3,
