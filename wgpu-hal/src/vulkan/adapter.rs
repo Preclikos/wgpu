@@ -825,6 +825,21 @@ impl PhysicalDeviceFeatures {
                     .map(|driver| driver.driver_id == vk::DriverId::MOLTENVK)
                     .unwrap_or_default(),
             );
+            features.set(
+                F::TEXTURE_FORMAT_P010,
+                supports_format(
+                    instance,
+                    phd,
+                    vk::Format::G16_B16R16_2PLANE_420_UNORM,
+                    vk::ImageTiling::OPTIMAL,
+                    vk::FormatFeatureFlags::SAMPLED_IMAGE
+                        | vk::FormatFeatureFlags::TRANSFER_SRC
+                        | vk::FormatFeatureFlags::TRANSFER_DST,
+                ) && !caps
+                    .driver
+                    .map(|driver| driver.driver_id == vk::DriverId::MOLTENVK)
+                    .unwrap_or_default(),
+            );
         }
 
         features.set(
