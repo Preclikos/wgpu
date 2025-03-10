@@ -35,6 +35,7 @@ mod mem_leaks;
 mod nv12_texture;
 mod occlusion_query;
 mod oob_indexing;
+mod p010_texture;
 mod pipeline;
 mod pipeline_cache;
 mod poll;
