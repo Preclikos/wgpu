@@ -1,6 +1,8 @@
 use std::{borrow::ToOwned as _, collections::BTreeMap, ffi::CStr, sync::Arc, vec::Vec};
 
 use ash::{amd, ext, google, khr, vk};
+#[cfg(target_os = "android")]
+use ash::android;
 use parking_lot::Mutex;
 
 use super::conv;
@@ -1064,6 +1066,17 @@ impl PhysicalDeviceProperties {
         // Optional `VK_KHR_external_memory_win32`
         if self.supports_extension(khr::external_memory_win32::NAME) {
             extensions.push(khr::external_memory_win32::NAME);
+        }
+
+        // Optional `VK_ANDROID_external_memory_android_hardware_buffer` and
+        // its prerequisite `VK_EXT_queue_family_foreign`. Enables AHardwareBuffer
+        // → VkImage import for MediaCodec Surface output (zero-copy video).
+        #[cfg(target_os = "android")]
+        if self.supports_extension(android::external_memory_android_hardware_buffer::NAME) {
+            extensions.push(android::external_memory_android_hardware_buffer::NAME);
+            if self.supports_extension(ext::queue_family_foreign::NAME) {
+                extensions.push(ext::queue_family_foreign::NAME);
+            }
         }
 
         // Require `VK_KHR_draw_indirect_count` if the associated feature was requested
