@@ -2,6 +2,8 @@ use alloc::{borrow::ToOwned as _, boxed::Box, collections::BTreeMap, sync::Arc, 
 use core::{ffi::CStr, marker::PhantomData};
 
 use ash::{ext, google, khr, vk};
+#[cfg(target_os = "android")]
+use ash::android;
 use parking_lot::Mutex;
 
 use crate::{vulkan::semaphore_list::SemaphoreList, AllocationSizes};
@@ -1308,6 +1310,17 @@ impl PhysicalDeviceProperties {
             extensions.push(ext::memory_budget::NAME);
         } else {
             log::debug!("VK_EXT_memory_budget is not available.")
+        }
+
+        // Optional `VK_ANDROID_external_memory_android_hardware_buffer` and
+        // its prerequisite `VK_EXT_queue_family_foreign`. Enables AHardwareBuffer
+        // → VkImage import for MediaCodec Surface output (zero-copy video).
+        #[cfg(target_os = "android")]
+        if self.supports_extension(android::external_memory_android_hardware_buffer::NAME) {
+            extensions.push(android::external_memory_android_hardware_buffer::NAME);
+            if self.supports_extension(ext::queue_family_foreign::NAME) {
+                extensions.push(ext::queue_family_foreign::NAME);
+            }
         }
 
         // Require `VK_KHR_draw_indirect_count` if the associated feature was requested
