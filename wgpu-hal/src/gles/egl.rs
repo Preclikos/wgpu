@@ -1,4 +1,4 @@
-use alloc::{string::String, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, string::String, sync::Arc, vec::Vec};
 use core::{ffi, mem::ManuallyDrop, ptr, time::Duration};
 use std::sync::LazyLock;
 
@@ -973,6 +973,7 @@ impl crate::Instance for Instance {
             raw_window_handle: window_handle,
             swapchain: RwLock::new(None),
             srgb_kind: inner.srgb_kind,
+            present_hook: PresentHook::new(),
         })
     }
 
@@ -1084,6 +1085,34 @@ pub struct Swapchain {
     sample_type: wgt::TextureSampleType,
 }
 
+type PresentHookFn = dyn Fn(&glow::Context, u32, u32) + Send + Sync;
+
+pub struct PresentHook(Mutex<Option<Box<PresentHookFn>>>);
+
+impl core::fmt::Debug for PresentHook {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.write_str("PresentHook")
+    }
+}
+
+impl PresentHook {
+    fn new() -> Self {
+        Self(Mutex::new(None))
+    }
+    pub fn set(&self, hook: Box<PresentHookFn>) {
+        *self.0.lock() = Some(hook);
+    }
+    fn call(&self, gl: &glow::Context, w: u32, h: u32) -> bool {
+        let guard = self.0.lock();
+        if let Some(f) = guard.as_ref() {
+            f(gl, w, h);
+            true
+        } else {
+            false
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Surface {
     egl: EglContext,
@@ -1093,12 +1122,24 @@ pub struct Surface {
     raw_window_handle: raw_window_handle::RawWindowHandle,
     swapchain: RwLock<Option<Swapchain>>,
     srgb_kind: SrgbFrameBufferKind,
+    pub present_hook: PresentHook,
 }
 
 unsafe impl Send for Surface {}
 unsafe impl Sync for Surface {}
 
 impl Surface {
+    /// Install a hook that fires inside `present()` after the window EGL surface is made current
+    /// and FBO 0 (window surface) is bound as DRAW_FRAMEBUFFER. The hook receives the GL context
+    /// and the swapchain extent. When a hook is installed the default renderbuffer blit is skipped;
+    /// the hook is responsible for rendering and the caller for eglSwapBuffers following.
+    pub fn set_present_hook(
+        &self,
+        hook: Box<dyn Fn(&glow::Context, u32, u32) + Send + Sync>,
+    ) {
+        self.present_hook.set(hook);
+    }
+
     pub(super) unsafe fn present(
         &self,
         _suf_texture: super::Texture,
@@ -1127,37 +1168,42 @@ impl Surface {
         unsafe { gl.color_mask(true, true, true, true) };
 
         unsafe { gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, None) };
-        unsafe { gl.bind_framebuffer(glow::READ_FRAMEBUFFER, Some(sc.framebuffer)) };
 
-        if !matches!(self.srgb_kind, SrgbFrameBufferKind::None) {
-            // Disable sRGB conversions for `glBlitFramebuffer` as behavior does diverge between
-            // drivers and formats otherwise and we want to ensure no sRGB conversions happen.
-            unsafe { gl.disable(glow::FRAMEBUFFER_SRGB) };
+        // If a present hook is installed (e.g. GL_TEXTURE_EXTERNAL_OES zero-copy path),
+        // let it draw directly to FBO 0 (window surface) instead of blitting the renderbuffer.
+        if !self.present_hook.call(&*gl, sc.extent.width, sc.extent.height) {
+            unsafe { gl.bind_framebuffer(glow::READ_FRAMEBUFFER, Some(sc.framebuffer)) };
+
+            if !matches!(self.srgb_kind, SrgbFrameBufferKind::None) {
+                // Disable sRGB conversions for `glBlitFramebuffer` as behavior does diverge between
+                // drivers and formats otherwise and we want to ensure no sRGB conversions happen.
+                unsafe { gl.disable(glow::FRAMEBUFFER_SRGB) };
+            }
+
+            // Note the Y-flipping here. GL's presentation is not flipped,
+            // but main rendering is. Therefore, we Y-flip the output positions
+            // in the shader, and also this blit.
+            unsafe {
+                gl.blit_framebuffer(
+                    0,
+                    sc.extent.height as i32,
+                    sc.extent.width as i32,
+                    0,
+                    0,
+                    0,
+                    sc.extent.width as i32,
+                    sc.extent.height as i32,
+                    glow::COLOR_BUFFER_BIT,
+                    glow::NEAREST,
+                )
+            };
+
+            if !matches!(self.srgb_kind, SrgbFrameBufferKind::None) {
+                unsafe { gl.enable(glow::FRAMEBUFFER_SRGB) };
+            }
+
+            unsafe { gl.bind_framebuffer(glow::READ_FRAMEBUFFER, None) };
         }
-
-        // Note the Y-flipping here. GL's presentation is not flipped,
-        // but main rendering is. Therefore, we Y-flip the output positions
-        // in the shader, and also this blit.
-        unsafe {
-            gl.blit_framebuffer(
-                0,
-                sc.extent.height as i32,
-                sc.extent.width as i32,
-                0,
-                0,
-                0,
-                sc.extent.width as i32,
-                sc.extent.height as i32,
-                glow::COLOR_BUFFER_BIT,
-                glow::NEAREST,
-            )
-        };
-
-        if !matches!(self.srgb_kind, SrgbFrameBufferKind::None) {
-            unsafe { gl.enable(glow::FRAMEBUFFER_SRGB) };
-        }
-
-        unsafe { gl.bind_framebuffer(glow::READ_FRAMEBUFFER, None) };
 
         self.egl
             .instance
