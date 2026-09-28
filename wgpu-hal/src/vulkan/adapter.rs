@@ -1305,6 +1305,18 @@ impl PhysicalDeviceProperties {
             extensions.push(ext::external_memory_dma_buf::NAME);
         }
 
+        // Optional `VK_EXT_image_drm_format_modifier`. A DMA-BUF (VAAPI
+        // surface) is laid out by its DRM format modifier; importing it with
+        // TILING_OPTIMAL is not valid. Needs Vulkan 1.1 plus
+        // `VK_KHR_image_format_list` (core in 1.2, enabled above when not).
+        if self.device_api_version >= vk::API_VERSION_1_1
+            && (self.device_api_version >= vk::API_VERSION_1_2
+                || self.supports_extension(khr::image_format_list::NAME))
+            && self.supports_extension(ext::image_drm_format_modifier::NAME)
+        {
+            extensions.push(ext::image_drm_format_modifier::NAME);
+        }
+
         // Optional `VK_EXT_memory_budget`
         if self.supports_extension(ext::memory_budget::NAME) {
             extensions.push(ext::memory_budget::NAME);
