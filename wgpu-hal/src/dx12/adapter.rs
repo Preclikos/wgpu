@@ -284,34 +284,21 @@ impl super::Adapter {
             }
         };
 
-        let heap_create_not_zeroed = {
-            // For D3D12_HEAP_FLAG_CREATE_NOT_ZEROED we just need to
-            // make sure that options7 can be queried. See also:
-            // https://devblogs.microsoft.com/directx/coming-to-directx-12-more-control-over-memory-allocation/
-            let mut features7 = Direct3D12::D3D12_FEATURE_DATA_D3D12_OPTIONS7::default();
-            unsafe {
-                device.CheckFeatureSupport(
-                    Direct3D12::D3D12_FEATURE_D3D12_OPTIONS7,
-                    <*mut _>::cast(&mut features7),
-                    size_of_val(&features7) as u32,
-                )
-            }
-            .is_ok()
-        };
-
-        // Intel Iris Xe: textures created with ALLOW_RENDER_TARGET (every
-        // image texture a 2D canvas such as FemtoVG allocates) in a
-        // CREATE_NOT_ZEROED heap and then filled by a copy come out with
-        // corrupted alpha on this driver - a light box where the image is
-        // transparent, appearing at random as resources are recreated. Same
-        // symptom as gfx-rs/wgpu#3552 ("uploading transparent pixel data"),
-        // whose workaround (no suballocation, below) did not cover it: the
-        // committed resources it falls back to still skip zeroing, and a copy
-        // is not a Clear/Discard, so the driver never initialises the render
-        // target's compression state. Zeroed heaps leave it valid; the cost
-        // is the driver zeroing memory once per texture allocation.
+        // Never use CREATE_NOT_ZEROED heaps. Textures created with
+        // ALLOW_RENDER_TARGET (every image texture a 2D canvas such as
+        // FemtoVG allocates) in a not-zeroed heap and then filled by a copy
+        // came out with corrupted alpha on Intel Iris Xe - a light box where
+        // the image is transparent, at random as resources are recreated
+        // (gfx-rs/wgpu#3552 is the same symptom; its no-suballocation
+        // workaround below still left committed resources unzeroed). A copy
+        // is not a Clear/Discard, so the render target's compression state is
+        // never initialised; the same Xe architecture ships under other names
+        // (UHD 7xx, Arc, "Intel(R) Graphics"), and other drivers are free to
+        // compress the same way. Zeroed heaps are D3D12's default; the cost is
+        // the driver zeroing memory once per texture allocation, and textures
+        // here are allocated rarely (per size, not per frame).
+        let heap_create_not_zeroed = false;
         let intel_xe = info.name.contains("Iris(R) Xe");
-        let heap_create_not_zeroed = heap_create_not_zeroed && !intel_xe;
 
         let unrestricted_buffer_texture_copy_pitch_supported = {
             let mut features13 = Direct3D12::D3D12_FEATURE_DATA_D3D12_OPTIONS13::default();
