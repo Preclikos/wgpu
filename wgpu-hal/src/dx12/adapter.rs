@@ -284,20 +284,20 @@ impl super::Adapter {
             }
         };
 
-        // Never use CREATE_NOT_ZEROED heaps. Textures created with
-        // ALLOW_RENDER_TARGET (every image texture a 2D canvas such as
-        // FemtoVG allocates) in a not-zeroed heap and then filled by a copy
-        // came out with corrupted alpha on Intel Iris Xe - a light box where
-        // the image is transparent, at random as resources are recreated
-        // (gfx-rs/wgpu#3552 is the same symptom; its no-suballocation
-        // workaround below still left committed resources unzeroed). A copy
-        // is not a Clear/Discard, so the render target's compression state is
-        // never initialised; the same Xe architecture ships under other names
-        // (UHD 7xx, Arc, "Intel(R) Graphics"), and other drivers are free to
-        // compress the same way. Zeroed heaps are D3D12's default; the cost is
-        // the driver zeroing memory once per texture allocation, and textures
-        // here are allocated rarely (per size, not per frame).
-        let heap_create_not_zeroed = false;
+        let heap_create_not_zeroed = {
+            // For D3D12_HEAP_FLAG_CREATE_NOT_ZEROED we just need to
+            // make sure that options7 can be queried. See also:
+            // https://devblogs.microsoft.com/directx/coming-to-directx-12-more-control-over-memory-allocation/
+            let mut features7 = Direct3D12::D3D12_FEATURE_DATA_D3D12_OPTIONS7::default();
+            unsafe {
+                device.CheckFeatureSupport(
+                    Direct3D12::D3D12_FEATURE_D3D12_OPTIONS7,
+                    <*mut _>::cast(&mut features7),
+                    size_of_val(&features7) as u32,
+                )
+            }
+            .is_ok()
+        };
 
         let unrestricted_buffer_texture_copy_pitch_supported = {
             let mut features13 = Direct3D12::D3D12_FEATURE_DATA_D3D12_OPTIONS13::default();
@@ -449,13 +449,7 @@ impl super::Adapter {
             heap_create_not_zeroed,
             casting_fully_typed_format_supported,
             // See https://github.com/gfx-rs/wgpu/issues/3552
-            // Suballocation on every adapter, Iris Xe included. Upstream turns
-            // it off on Iris Xe (gfx-rs/wgpu#3552: transparent uploads came out
-            // wrong); the cause was a render-target texture whose first
-            // operation was a copy, which wgpu-core now always precedes with a
-            // clear. Measured: committed-only resources cost ~80 us per small
-            // write_buffer (2-2.5 ms per Slint frame on Intel UHD).
-            suballocation_supported: true,
+            suballocation_supported: !info.name.contains("Iris(R) Xe"),
             shader_model,
             max_sampler_descriptor_heap_size,
             unrestricted_buffer_texture_copy_pitch_supported,

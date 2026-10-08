@@ -29,7 +29,7 @@ use crate::{
     global::Global,
     hal_label,
     id::{self, BlasId, QueueId},
-    init_tracker::TextureInitRange,
+    init_tracker::{has_copy_partial_init_tracker_coverage, TextureInitRange},
     lock::{rank, Mutex, MutexGuard, RwLock, RwLockWriteGuard},
     ray_tracing::{BlasCompactReadyPendingClosure, CompactBlasError},
     resource::{
@@ -807,13 +807,11 @@ impl Queue {
         let mut pending_writes = self.pending_writes.lock();
         let encoder = pending_writes.activate();
 
-        // An uninitialised layer is cleared before the write, whether or not
-        // the write covers all of it. Upstream skips the clear for a full
-        // write, so a texture's first operation can be a copy - and for a
-        // render-target-capable texture D3D12 requires a Clear/Discard first:
-        // a copy leaves the driver's compression state uninitialised, which
-        // on Intel Xe showed as corrupted alpha (a light box where an image
-        // is transparent). One clear per texture creation, not per write.
+        // If the copy does not fully cover the layers, we need to initialize to
+        // zero *first* as we don't keep track of partial texture layer inits.
+        //
+        // Strictly speaking we only need to clear the areas of a layer
+        // untouched, but this would get increasingly messy.
         let init_layer_range = if dst.desc.dimension == wgt::TextureDimension::D3 {
             // volume textures don't have a layer range as array volumes aren't supported
             0..1
@@ -825,7 +823,7 @@ impl Queue {
             .check(init_layer_range.clone())
             .is_some()
         {
-            {
+            if has_copy_partial_init_tracker_coverage(size, destination.mip_level, &dst.desc) {
                 for layer_range in dst_initialization_status.mips[destination.mip_level as usize]
                     .drain(init_layer_range)
                     .collect::<Vec<core::ops::Range<u32>>>()
@@ -846,6 +844,9 @@ impl Queue {
                     )
                     .map_err(QueueWriteError::from)?;
                 }
+            } else {
+                dst_initialization_status.mips[destination.mip_level as usize]
+                    .drain(init_layer_range);
             }
         }
 
@@ -1079,7 +1080,7 @@ impl Queue {
             .check(init_layer_range.clone())
             .is_some()
         {
-            if crate::init_tracker::has_copy_partial_init_tracker_coverage(&size, destination.mip_level, &dst.desc) {
+            if has_copy_partial_init_tracker_coverage(&size, destination.mip_level, &dst.desc) {
                 for layer_range in dst_initialization_status.mips[destination.mip_level as usize]
                     .drain(init_layer_range)
                     .collect::<Vec<core::ops::Range<u32>>>()
