@@ -299,6 +299,20 @@ impl super::Adapter {
             .is_ok()
         };
 
+        // Intel Iris Xe: textures created with ALLOW_RENDER_TARGET (every
+        // image texture a 2D canvas such as FemtoVG allocates) in a
+        // CREATE_NOT_ZEROED heap and then filled by a copy come out with
+        // corrupted alpha on this driver - a light box where the image is
+        // transparent, appearing at random as resources are recreated. Same
+        // symptom as gfx-rs/wgpu#3552 ("uploading transparent pixel data"),
+        // whose workaround (no suballocation, below) did not cover it: the
+        // committed resources it falls back to still skip zeroing, and a copy
+        // is not a Clear/Discard, so the driver never initialises the render
+        // target's compression state. Zeroed heaps leave it valid; the cost
+        // is the driver zeroing memory once per texture allocation.
+        let intel_xe = info.name.contains("Iris(R) Xe");
+        let heap_create_not_zeroed = heap_create_not_zeroed && !intel_xe;
+
         let unrestricted_buffer_texture_copy_pitch_supported = {
             let mut features13 = Direct3D12::D3D12_FEATURE_DATA_D3D12_OPTIONS13::default();
             unsafe {
@@ -449,7 +463,7 @@ impl super::Adapter {
             heap_create_not_zeroed,
             casting_fully_typed_format_supported,
             // See https://github.com/gfx-rs/wgpu/issues/3552
-            suballocation_supported: !info.name.contains("Iris(R) Xe"),
+            suballocation_supported: !intel_xe,
             shader_model,
             max_sampler_descriptor_heap_size,
             unrestricted_buffer_texture_copy_pitch_supported,
