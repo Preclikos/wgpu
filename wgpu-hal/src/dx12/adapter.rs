@@ -298,7 +298,6 @@ impl super::Adapter {
         // the driver zeroing memory once per texture allocation, and textures
         // here are allocated rarely (per size, not per frame).
         let heap_create_not_zeroed = false;
-        let intel_xe = info.name.contains("Iris(R) Xe");
 
         let unrestricted_buffer_texture_copy_pitch_supported = {
             let mut features13 = Direct3D12::D3D12_FEATURE_DATA_D3D12_OPTIONS13::default();
@@ -450,7 +449,13 @@ impl super::Adapter {
             heap_create_not_zeroed,
             casting_fully_typed_format_supported,
             // See https://github.com/gfx-rs/wgpu/issues/3552
-            suballocation_supported: !intel_xe,
+            // Suballocation on every adapter, Iris Xe included. Upstream turns
+            // it off on Iris Xe (gfx-rs/wgpu#3552: transparent uploads came out
+            // wrong); the cause was a render-target texture whose first
+            // operation was a copy, which wgpu-core now always precedes with a
+            // clear. Measured: committed-only resources cost ~80 us per small
+            // write_buffer (2-2.5 ms per Slint frame on Intel UHD).
+            suballocation_supported: true,
             shader_model,
             max_sampler_descriptor_heap_size,
             unrestricted_buffer_texture_copy_pitch_supported,
