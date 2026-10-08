@@ -618,6 +618,8 @@ pub struct Queue {
     family_index: u32,
     relay_semaphores: Mutex<RelaySemaphores>,
     signal_semaphores: Mutex<SemaphoreList>,
+    /// Waits added by [`Queue::add_wait_semaphore`] for the next submission.
+    wait_semaphores: Mutex<SemaphoreList>,
 }
 
 impl Queue {
@@ -1288,6 +1290,10 @@ impl crate::Queue for Queue {
         if !guard.is_empty() {
             signal_semaphores.append(&mut guard);
         }
+        let mut wait_guard = self.wait_semaphores.lock();
+        if !wait_guard.is_empty() {
+            wait_semaphores.append(&mut wait_guard);
+        }
 
         // In order for submissions to be strictly ordered, we encode a dependency between each submission
         // using a pair of semaphores. This adds a wait if it is needed, and signals the next semaphore.
@@ -1368,6 +1374,26 @@ impl crate::Queue for Queue {
 impl Queue {
     pub fn raw_device(&self) -> &ash::Device {
         &self.device.raw
+    }
+
+    /// Make the next submission on this queue wait for `semaphore` (a
+    /// timeline semaphore when `semaphore_value` is `Some`) at `stage`.
+    /// Submissions on a queue are chained by relay semaphores, so every
+    /// later submission is ordered after the wait too - the Vulkan
+    /// equivalent of `ID3D12CommandQueue::Wait`. The semaphore must stay
+    /// alive until that submission has completed.
+    pub fn add_wait_semaphore(
+        &self,
+        semaphore: vk::Semaphore,
+        semaphore_value: Option<u64>,
+        stage: vk::PipelineStageFlags,
+    ) {
+        let mut guard = self.wait_semaphores.lock();
+        let ty = match semaphore_value {
+            Some(value) => SemaphoreType::Timeline(semaphore, value),
+            None => SemaphoreType::Binary(semaphore),
+        };
+        guard.push_wait(ty, stage);
     }
 
     pub fn add_signal_semaphore(&self, semaphore: vk::Semaphore, semaphore_value: Option<u64>) {

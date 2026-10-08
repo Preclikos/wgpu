@@ -1295,6 +1295,14 @@ impl PhysicalDeviceProperties {
             extensions.push(khr::external_memory_win32::NAME);
         }
 
+        // Optional `VK_KHR_external_semaphore_win32`: lets an embedder import
+        // a D3D11/D3D12 fence as a timeline semaphore and have the queue wait
+        // on it on the GPU (`Queue::add_wait_semaphore`), e.g. for decoder
+        // frames shared from D3D11.
+        if self.supports_extension(khr::external_semaphore_win32::NAME) {
+            extensions.push(khr::external_semaphore_win32::NAME);
+        }
+
         // Optional `VK_KHR_external_memory_fd`
         if self.supports_extension(khr::external_memory_fd::NAME) {
             extensions.push(khr::external_memory_fd::NAME);
@@ -2810,6 +2818,7 @@ impl super::Adapter {
             family_index,
             relay_semaphores: Mutex::new(relay_semaphores),
             signal_semaphores: Mutex::new(SemaphoreList::new(SemaphoreListMode::Signal)),
+            wait_semaphores: Mutex::new(SemaphoreList::new(SemaphoreListMode::Wait)),
         };
 
         let allocation_sizes = AllocationSizes::from_memory_hints(memory_hints).into();
