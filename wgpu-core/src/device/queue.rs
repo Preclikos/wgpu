@@ -844,6 +844,30 @@ impl Queue {
                     )
                     .map_err(QueueWriteError::from)?;
                 }
+            } else if force_clear_before_copy() {
+                // Test switch: initialise (Clear) even when the write covers
+                // the whole layer, so the first operation on a render-target
+                // texture is never a copy. See `force_clear_before_copy`.
+                for layer_range in dst_initialization_status.mips[destination.mip_level as usize]
+                    .drain(init_layer_range)
+                    .collect::<Vec<core::ops::Range<u32>>>()
+                {
+                    let mut trackers = self.device.trackers.lock();
+                    crate::command::clear_texture(
+                        &dst,
+                        TextureInitRange {
+                            mip_range: destination.mip_level..(destination.mip_level + 1),
+                            layer_range,
+                        },
+                        encoder,
+                        &mut trackers.textures,
+                        &self.device.alignments,
+                        self.device.zero_buffer.as_ref(),
+                        &snatch_guard,
+                        self.device.instance_flags,
+                    )
+                    .map_err(QueueWriteError::from)?;
+                }
             } else {
                 dst_initialization_status.mips[destination.mip_level as usize]
                     .drain(init_layer_range);
@@ -1875,4 +1899,19 @@ fn validate_command_buffer(
         }
     }
     Ok(())
+}
+
+/// `WGPU_FORCE_CLEAR_BEFORE_COPY=1`: diagnostic switch for the Intel Xe
+/// render-target init problem (see the DX12 adapter's zeroed-heap
+/// workaround). Makes `write_texture` clear a not-yet-initialised layer even
+/// when the write covers all of it. Off by default; read once.
+#[cfg(feature = "std")]
+fn force_clear_before_copy() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("WGPU_FORCE_CLEAR_BEFORE_COPY").is_some())
+}
+
+#[cfg(not(feature = "std"))]
+fn force_clear_before_copy() -> bool {
+    false
 }
